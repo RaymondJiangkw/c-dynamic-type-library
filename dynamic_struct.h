@@ -17,6 +17,7 @@
 #include <map>
 #include <stack>
 #include <functional>
+#include <algorithm>
 
 namespace dynamic_struct {
     enum class Primitive_Data_Types {
@@ -102,6 +103,7 @@ namespace dynamic_struct {
         void* data;
         bool hold_or_possess; // true - hold | false - possess
         std::string name;
+        Type* parent_type;
         /**
          * Check for legitimacy of variable name
          */
@@ -109,7 +111,12 @@ namespace dynamic_struct {
             return name.find_first_of(FORBIDDEN_VARIABLE_NAME_CHARS) == std::string::npos;
         }
         virtual std::string _type(std::string prefix, bool with_name) const = 0;
-        Type(Type_Class type, std::string _name):type_class(type), name(""), data(NULL), hold_or_possess(true) {
+        /**
+         * For Struct Type
+         */
+        virtual void change_key(std::string target, std::string origin) = 0;
+
+        Type(Type_Class type, std::string _name):type_class(type), name(""), data(nullptr), hold_or_possess(true), parent_type(nullptr) {
             if (!check_name(_name)) throw std::invalid_argument(("Value Error: Cannot assign name '" + _name + "' to type").c_str());
             else name = _name;
         }
@@ -215,6 +222,10 @@ namespace dynamic_struct {
 
         Type* set_name(std::string _name) {
             if (!check_name(_name)) throw std::invalid_argument(("Value Error: Cannot assign name '" + _name + "' to type").c_str());
+            // Change Upper side Type
+            if (parent_type != nullptr && parent_type->type_class == Type_Class::Struct) {
+                parent_type->change_key(_name, name);
+            }
             name = _name;
             return this;
         }
@@ -257,6 +268,9 @@ namespace dynamic_struct {
         virtual std::string _type(std::string prefix, bool with_name) const {
             std::string suffix = with_name == true ? " " + name : "";
             return prefix + get_string_from_type(primitive_data_type) + suffix;
+        }
+        virtual void change_key(std::string target, std::string origin) {
+            throw std::invalid_argument(("Compile Error: Cannot change key of a Primitive Type '" + name + "'").c_str());
         }
     public:
         Primitive_Type(Primitive_Data_Types type, std::string name):primitive_data_type(type), Type(Type_Class::Primitive, name) {}
@@ -480,7 +494,7 @@ namespace dynamic_struct {
 
             case Primitive_Data_Types::Char: return std::string(1, *get_Char());
 
-            case Primitive_Data_Types::Boolean: *get_Boolean() == true ? "true" : "false";
+            case Primitive_Data_Types::Boolean: return *get_Boolean() == true ? "true" : "false";
 
             case Primitive_Data_Types::Float_32: return std::to_string(*get_Float_32());
             case Primitive_Data_Types::Float_64: return std::to_string(*get_Float_64());
@@ -561,8 +575,13 @@ namespace dynamic_struct {
         virtual std::string _type(std::string prefix, bool with_name) const {
             return prefix + "[" + std::to_string(size) + "]" + element_type->_type("", false) + (with_name == true? " " + name: "");
         }
+        virtual void change_key(std::string target, std::string origin) {
+            throw std::invalid_argument(("Compile Error: Cannot change key of an Array Type '" + name + "'").c_str());
+        }
     public:
-        Array_Type(size_t _size, const Type* type, std::string name):size(_size), element_type(type->clone()), Type(Type_Class::Array, name) {}
+        Array_Type(size_t _size, const Type* type, std::string name):size(_size), element_type(type->clone()), Type(Type_Class::Array, name) {
+            element_type->parent_type = this;
+        }
         ~Array_Type() { delete element_type; }
         virtual Array_Type* clone() const {
             return new Array_Type(size, element_type, name);
@@ -579,6 +598,7 @@ namespace dynamic_struct {
             if (pos >= size) throw std::out_of_range(("Index Error: Cannot index over the length of type '" + name + "'").c_str());
             void* shifted_data = static_cast<void*>(static_cast<char*>(data) + element_type->size_of() * pos);
             Type* ptr = element_type->clone();
+            ptr->parent_type = this;
             ptr->hold(shifted_data);
             return std::unique_ptr<Type>(ptr);
         }
@@ -720,6 +740,21 @@ namespace dynamic_struct {
             str += prefix + "}";
             return str;
         }
+        virtual void change_key(std::string target, std::string origin) {
+            auto iter = std::find(keys.begin(), keys.end(), origin);
+            if (iter == keys.end()) {
+                throw std::invalid_argument(("Value Error: Cannot find key '" + origin + "' in Struct Type '" + name + "' for replacement").c_str());
+            }
+            if (std::find(keys.begin(), keys.end(), target) != keys.end()) {
+                throw std::invalid_argument(("Value Error: Cannot change a name of property into an existing one '" + target + "' in Struct Type '" + name + "'").c_str());
+            }
+            *iter = target;
+            type_name_to_pos[target] = type_name_to_pos[origin];
+            type_name_to_offset[target] = type_name_to_offset[origin];
+
+            type_name_to_pos.erase(origin);
+            type_name_to_offset.erase(origin);
+        }
     public:
         /**
          * Sub-variables is arranged corresponding to its position in `_types`.
@@ -739,6 +774,7 @@ namespace dynamic_struct {
                 }
 
                 types.at(index) = _types[index]->clone();
+                types.at(index)->parent_type = this;
                 keys.at(index) = types.at(index)->name;
 
                 type_name_to_pos[types.at(index)->name] = index;
@@ -809,6 +845,7 @@ namespace dynamic_struct {
             type_name_to_offset[type->name] = size_of();
 
             types.push_back(type->clone());
+            types[types.size() - 1]->parent_type = this;
             keys.push_back(type->name);
             type_name_to_pos[type->name] = types.size() - 1;
             return *this;
@@ -1024,14 +1061,13 @@ namespace dynamic_struct {
             if (name_field_end_pos == std::string::npos) throw std::invalid_argument(parse_error.c_str());
             std::string name = src.substr(name_field_start_pos, name_field_end_pos - name_field_start_pos);
 
+            Struct_Type* ret = new Struct_Type({}, name);
+
             size_t type_field_start_pos = name_field_end_pos + 1;
             size_t type_field_end_pos = src.length() - 1;
             std::string type_field_str = src.substr(type_field_start_pos, type_field_end_pos - type_field_start_pos);
             // Check for Validity
             if (type_field_str[0] != '(' && type_field_str[0] != '[' && type_field_str[0] != '{') throw std::invalid_argument(parse_error.c_str());
-
-            std::vector<std::unique_ptr<Type> > type_ptrs; // For Temporary Storage
-            std::vector<Type*> types;
 
             // Use Stack to divide sequence of type
             struct Indicator {
@@ -1052,13 +1088,12 @@ namespace dynamic_struct {
                     Indicator top = Stack.top(); Stack.pop();
                     if (!is_match(top.indicator, type_field_str[index])) throw std::invalid_argument(parse_error.c_str());
                     if (Stack.empty()) { // The Most Outside Type (Exclude Nested Ones)
-                        type_ptrs.push_back(Deserialize(type_field_str.substr(top.pos, index - top.pos + 1)));
-                        types.push_back(type_ptrs[type_ptrs.size() - 1].get());
+                        ret->append(Deserialize(type_field_str.substr(top.pos, index - top.pos + 1)).get());
                     }
                 }
             }
 
-            return std::unique_ptr<Type>(new Struct_Type(types, name));
+            return std::unique_ptr<Type>(ret);
             break;
         }
         default:

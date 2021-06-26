@@ -4,7 +4,7 @@ This library implements run-time `dynamic type`, including constructing, loading
 
 I write this library in 2 days out of sudden inspiration and impulse, but with great passion, because of boredom and worriness during exam week. As a result, there might be bugs or many room for optimization (Currently, as far as I know, the compilation time is a bit long). Any Pull Request is welcome!
 
-Author: Jiang Kevin
+*Author*: Jiang Kevin
 
 ## Dependencies
 
@@ -18,6 +18,19 @@ I develop this library in the `Windows` platform, but `linux` and `macOS` platfo
 - Define multiple macros for convenience, avoiding tons of temporary pointers
 - Overload operator `>>`, `<<` and `[]` for their intuitive usage
 - Throw C++ native Exception for Error Handle
+- Supported Primitive DataTypes (`Array` and `Struct` are based on them) include:
+    - Int_8
+    - Int_16
+    - Int_32
+    - Int_64
+    - Unsigned_Int_8
+    - Unsigned_Int_16
+    - Unsigned_Int_32
+    - Unsigned_Int_64
+    - Char
+    - Boolean
+    - Float_32
+    - Float_64
 
 ## Example
 
@@ -29,29 +42,113 @@ $ g++ -std=c++11 ./dynamic_struct.h ./example.cpp
 
 ## How to use
 
-### 1. Create Multi-dimensional Array based on Input
+### 1. Read Data Type and Input Value
 ```c++
 #include "dynamic_struct.h"
 
 using namespace dynamic_struct;
 
 int main() {
+    std::string data_type;
+    std::cin >> data_type;
+    Primitive_Type type(get_type_from_string(data_type), "type");
+    type.init(); // Allocate Memory
+    std::cin >> type;
+    std::cout << type;
+}
+```
+
+Output:
+```shell
+$ ./a.exe
+Float_32
+1.5
+1
+$ ./a.exe
+Int_8
+1.5
+1
+$ ./a.exe
+Boolean
+1.5
+terminate called after throwing an instance of 'std::invalid_argument'
+  what():  Value Error: Cannot set 1.5 into Boolean type 'type'
+```
+
+### 2. Create Struct with variable Properties
+```c++
+#include "dynamic_struct.h"
+
+using namespace dynamic_struct;
+
+int main() {
+    Struct_Type type({}, "type");
+    size_t number_of_properties = 0;
+    std::cin >> number_of_properties;
+    std::string data_type, data_name;
+
+    for (size_t index = 0; index < number_of_properties; index++) {
+        std::cin >> data_type >> data_name;
+        type.append(Primitive_Type_ptr(get_type_from_string(data_type), data_name));
+    }
+
+    type.init(); // After `init`, no further property could be appended.
+
+    for (auto property_name : type.get_Keys()) {
+        std::cin >> type[property_name];
+    }
+
+    for (auto property_name : type.get_Keys()) {
+        std::cout << property_name << ": " << type[property_name] << std::endl;
+    }
+}
+```
+
+Output:
+```shell
+$ ./a.exe
+5
+Int_64 x
+Int_64 y
+Char c
+Float_32 f
+Boolean b
+127
+-9999
+c
+-0.0001  
+false
+x: 127      
+y: -9999    
+c: c        
+f: -0.000100
+b: false
+```
+
+### 3. Create Multi-dimensional Array, whose Base Type is based on Input
+```c++
+#include "dynamic_struct.h"
+
+using namespace dynamic_struct;
+
+int main() {
+    std::string data_type;
+    std::cin >> data_type;
+
     size_t number_of_dimensions = 0;
     Array_Type* array = nullptr;
 
-    std::cin >> number_of_dimensions;
+    std::cin >> number_of_dimensions; // Notice that: The order of dimensions is opposite to the order of input.
     
     for (size_t index = 0; index < number_of_dimensions; ++index) {
         size_t dimension = 0;
         std::cin >> dimension;
         
-        if (index == 0) array = new Array_Type(dimension, Float_32(), "array");
+        if (index == 0) array = new Array_Type(dimension, Primitive_Type_ptr(get_type_from_string(data_type), ""), "array");
         else {
             Array_Type* sub_array = array;
             array = new Array_Type(dimension, sub_array, "array");
-            delete sub_array; // Memory is not allocated 
-                              // until calling its `init` method, 
-                              // so this process shouldn't waste much resources.
+            delete sub_array; // Memory is not allocated until calling its `init` method, so this process shouldn't waste much resources
         }
     }
     std::cout << array->type() << std::endl;
@@ -63,12 +160,18 @@ int main() {
 Output:
 ```shell
 $ ./a.exe
+Float_32
 3
-3 32 64
-[64][32][3]Float_32 array
+2 3 4
+[4][3][2]Float_32 array
+$ ./a.exe
+Boolean
+4
+2 3 4 5
+[5][4][3][2]Boolean array
 ```
 
-### 2. Read and Print Data in Struct
+### 4. Change name of Variable in Struct
 ```c++
 #include "dynamic_struct.h"
 
@@ -76,8 +179,8 @@ using namespace dynamic_struct;
 
 int main() {
     Struct_Type sub_struct({
-        Int_64("x"),
-        Int_64("y")
+        Int_64("tmp_name_1"),
+        Int_64("tmp_name_2")
     }, "sub_struct");
     Struct_Type type({
         Tensor(32, 32, 3, Float_32(), "tensor"),
@@ -85,19 +188,27 @@ int main() {
     }, "type");
 
     type.init(); // Memory is allocated
+    std::string new_name_1, new_name_2;
+    std::cin >> new_name_1 >> new_name_2;
+
+    type["sub_struct"]["tmp_name_1"].set_name(new_name_1);
+    type["sub_struct"]["tmp_name_2"].set_name(new_name_2);
     
-    std::cin >> type["sub_struct"]["x"] >> type["sub_struct"]["y"];
-    std::cout << type["sub_struct"]["x"] << " " << type["sub_struct"]["y"];
+    std::cin >> type["sub_struct"][new_name_1] >> type["sub_struct"][new_name_2];
+
+    for (auto key : type["sub_struct"].get_Keys()) std::cout << key << " " << type["sub_struct"][key] << std::endl;
 }
 ```
 
 Output:
 ```shell
 $ ./a.exe
-16 32
-16 32
+x y 
+-128 127
+x -128
+y 127
 ```
-### 3. Serialize and Deserialize Type
+### 5. Serialize and Deserialize Type
 ```c++
 #include "dynamic_struct.h"
 
@@ -132,7 +243,8 @@ type {
 ```
 
 ## TODO
-- [ ] Make `set_name` into a *safe* function. Currently, changing the name of variable in `Struct` will not result in the subsequent change of cached list of variable names in `Struct`, which is definitely a bug.
+- [ ] Reorganize Error Handle to clean up redundant code.
+- [ ] Support Function as Primitive Data Type, perhaps?
 
 ## License
 
