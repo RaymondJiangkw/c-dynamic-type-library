@@ -6,6 +6,10 @@ I write this library in 2 days out of sudden inspiration and impulse, but with g
 
 *Author*: Jiang Kevin
 
+## Purpose
+
+The idea for developing this library emerges when I was using C++ to write a Simple Database Program like `SQLite`, in which case an arbitrary table with variable number of properties and types should be able to be created, modified, stored to and loaded from a single file. The solution is usually to write an embedded Virtual Machine, like JVM, which enables dynamic `reflection`. However, Virtual Machine will be an overkill for my simple program, so I wonder whether there exists a native way to develop dynamic type in C++. This library is my solution.
+
 ## Dependencies
 
 I develop this library in the `Windows` platform, but `linux` and `macOS` platforms are not tested yet. I think it should work in both platforms, since I didn't use any platform-specific tricks or libraries.
@@ -63,7 +67,7 @@ Output:
 $ ./a.exe
 Float_32
 1.5
-1
+1.500000
 $ ./a.exe
 Int_8
 1.5
@@ -94,13 +98,11 @@ int main() {
 
     type.init(); // After `init`, no further property could be appended.
 
-    for (auto property_name : type.get_Keys()) {
+    for (auto property_name : type.get_Keys())
         std::cin >> type[property_name];
-    }
 
-    for (auto property_name : type.get_Keys()) {
+    for (auto property_name : type.get_Keys())
         std::cout << property_name << ": " << type[property_name] << std::endl;
-    }
 }
 ```
 
@@ -138,17 +140,23 @@ int main() {
     size_t number_of_dimensions = 0;
     Array_Type* array = nullptr;
 
-    std::cin >> number_of_dimensions; // Notice that: The order of dimensions is opposite to the order of input.
+    // Notice that: The order of dimensions is opposite to the order of input.
+    std::cin >> number_of_dimensions;
     
     for (size_t index = 0; index < number_of_dimensions; ++index) {
         size_t dimension = 0;
         std::cin >> dimension;
         
-        if (index == 0) array = new Array_Type(dimension, Primitive_Type_ptr(get_type_from_string(data_type), ""), "array");
+        if (index == 0) array = new Array_Type(
+            dimension, 
+            Primitive_Type_ptr(get_type_from_string(data_type), ""), 
+            "array");
         else {
             Array_Type* sub_array = array;
             array = new Array_Type(dimension, sub_array, "array");
-            delete sub_array; // Memory is not allocated until calling its `init` method, so this process shouldn't waste much resources
+            delete sub_array; // Memory is not allocated 
+                              // until calling its `init` method, 
+                              // so this process shouldn't waste much resources
         }
     }
     std::cout << array->type() << std::endl;
@@ -196,7 +204,8 @@ int main() {
     
     std::cin >> type["sub_struct"][new_name_1] >> type["sub_struct"][new_name_2];
 
-    for (auto key : type["sub_struct"].get_Keys()) std::cout << key << " " << type["sub_struct"][key] << std::endl;
+    for (auto key : type["sub_struct"].get_Keys())
+        std::cout << key << " " << type["sub_struct"][key] << std::endl;
 }
 ```
 

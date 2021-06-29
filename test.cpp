@@ -95,5 +95,5 @@ void test_5() {
 }
 
 int main() {
-    test_4();
+    test_1();
 }
